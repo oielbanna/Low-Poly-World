@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>COSC114 Lab 11</title>
+	<meta charset="UTF-8">
+	<style>
+		body {
+			background: linear-gradient(to bottom, #163C52 0%, #4F4F47 35%, #C5752D 60%, #B7490F 80%, #2F1107 100%);
+			margin: 0;
+			padding: 0;
+			overflow: hidden;
+		}
+
+	</style>
+</head>
+
+<body>
+	<script src="three.min.js"></script>
+	<script src="OrbitControls.js"></script>
+	<script src="Tree.js"></script>
+	<script src="Boid.js"></script>
+	<script src="Tween.js"></script>
+	<script src="StereoEffect.js"></script>
+	<script type="text/javascript">
+		var treeDef = {
+			numEpochs: 3,
+			start: 'F',
+			rules: {
+				'F': 'FFF:[F-F-F]-[-F+F+F]',
+				'+': '+',
+				'-': '-',
+				'[': '[',
+				']': ']',
+				';': ';',
+				':': ':'
+			},
+			angle: Math.PI / 4
+		}
+		var theBoids = [];
+		var numBoids = 50;
+		var scene, renderer, controls;
+		var ground, grass, tree, clouds, head, Arms, body, group;
+		var clouds = {};
+		var ambientLight, light, camera, effect;
+
+		init();
+		initObjects();
+		render();
+
+
+		function init() {
+			var WIDTH = window.innerWidth;
+			var HEIGHT = window.innerHeight;
+			scene = new THREE.Scene();
+			renderer = new THREE.WebGLRenderer({
+				alpha: true
+			});
+			renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+			renderer.shadowMap.enabled = true;
+			renderer.setSize(WIDTH, HEIGHT);
+			document.body.appendChild(renderer.domElement);
+			window.addEventListener('resize', onWindowResize, false);
+
+			// camera stuff
+			camera = new THREE.PerspectiveCamera(60, WIDTH / HEIGHT, 0.1, 5000);
+			camera.position.z = 230;
+			camera.position.y = 20;
+			controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+			effect = new THREE.StereoEffect(renderer);
+			effect.setSize(window.innerWidth, window.innerHeight);
+
+
+			// lights stuff
+			scene.add(new THREE.AmbientLight(0xb5b5b5, 0.6));
+			var light = new THREE.SpotLight(0xffffff, 1);
+			light.castShadow = true;
+			light.position.set(-110, 400, 100);
+			light.shadow.mapSize.width = 1000;
+			light.shadow.mapSize.height = 1000;
+			light.shadow.camera.near = 100;
+			light.shadow.camera.far = 500;
+			scene.add(light);
+			var lightHelper = new THREE.DirectionalLightHelper(light, 15);
+			//scene.add(lightHelper);
+			var helper = new THREE.CameraHelper(light.shadow.camera);
+			//scene.add(helper);
+
+			//cheating light
+			var l = new THREE.DirectionalLight(0xffffff, 0.5);
+			l.position.set(-100, -10, 100);
+			scene.add(l);
+		}
+
+		function initObjects() {
+			island();
+			clouds();
+			tree();
+			//Robot();
+			makeFlock();
+
+			function island() {
+				// Generating ground
+				var groundGeo = new THREE.CylinderGeometry(100, 10, 80, 14, 3);
+				var material = new THREE.MeshPhongMaterial({
+					color: 0x4E342E,
+					shading: THREE.FlatShading
+
+				});
+				// generating grass
+				var grassGeo = new THREE.CylinderGeometry(100, 100, 8, 14, 1);
+				var grassMat = new THREE.MeshPhongMaterial({
+					color: 0x8BC34A,
+					shading: THREE.FlatShading
+				});
+
+				console.log(groundGeo.vertices.length);
+				console.log(grassGeo.vertices.length);
+				var p1 = 12;
+				var p2 = 24;
+				var p3 = 5;
+				groundGeo.vertices[20].y -= 24;
+				groundGeo.vertices[18].y -= 24;
+				groundGeo.vertices[40].y -= 24;
+				groundGeo.vertices[30].y -= 22;
+				groundGeo.vertices[46].y -= 20;
+				groundGeo.vertices[25].y -= 12;
+				groundGeo.vertices[26].y += 10;
+				for (var i = 0; i < groundGeo.vertices.length; i++) {
+					if (i % 2 == 0) {
+						groundGeo.vertices[i].z += p1;
+					} else if (i % 3 == 0) {
+						groundGeo.vertices[i].z += p2;
+					} else {
+						groundGeo.vertices[i].z += p3;
+					}
+				}
+				for (var i = 0; i < grassGeo.vertices.length; i++) {
+					if (i % 2 == 0) {
+						grassGeo.vertices[i].z += p1;
+					} else if (i % 3 == 0) {
+						grassGeo.vertices[i].z += p2;
+					} else {
+						grassGeo.vertices[i].z += p3;
+					}
+				}
+				grass = new THREE.Mesh(grassGeo, grassMat);
+				grass.position.y += 2;
+				grass.rotation.z = Math.PI;
+				grass.receiveShadow = true;
+				scene.add(grass);
+
+				ground = new THREE.Mesh(groundGeo, material);
+				ground.receiveShadow = true;
+				ground.position.y -= 42;
+				scene.add(ground);
+			}
+
+			function clouds() {
+				function createCluster() {
+					cluster = new THREE.Object3D();
+					var geometrySmall = new THREE.IcosahedronGeometry(10, 0);
+					var geometryBig = new THREE.IcosahedronGeometry(17, 0);
+					var material = new THREE.MeshPhongMaterial({
+						color: 0xe2e2e2,
+						shading: THREE.FlatShading
+					});
+					var meshLeft = new THREE.Mesh(geometrySmall, material);
+					meshLeft.position.x -= 15;
+					meshLeft.castShadow = true;
+					var meshCenter = new THREE.Mesh(geometryBig, material);
+					meshCenter.castShadow = true;
+					var meshRight = new THREE.Mesh(geometrySmall, material);
+					meshRight.position.x += 15;
+					meshRight.castShadow = true;
+					cluster.add(meshLeft);
+					cluster.add(meshCenter);
+					cluster.add(meshRight);
+					cluster.position.set(0, 80, 0);
+					return cluster;
+				}
+				// creates given number of clusters
+				for (var i = 0; i < 3; i++) {
+					clouds[i] = createCluster();
+					clouds[i].position.x += -80 + Math.random() * 180;
+					clouds[i].position.y += Math.random() * 30;
+					clouds[i].position.z += -100 + Math.random() * 150;
+					clouds[i].castShadow = true;
+					scene.add(clouds[i]);
+				}
+			}
+
+			function tree() {
+				tree = Tree();
+				tree.castShadow = true;
+				tree.receiveShadow = true;
+				tree.position.y += 6;
+				tree.position.x -= 50;
+				tree.position.z += 50;
+				tree.rotation.y += Math.PI / 3;
+				scene.add(tree);
+			}
+
+			function Robot() {
+				var bodyGeometry = new THREE.BoxGeometry(10.5, 10.5, 10.5);
+				var bodyMaterial = new THREE.MeshPhongMaterial({
+					color: 0x672C21,
+					shading: THREE.FlatShading
+				});
+				body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+				body.position.y += 7;
+				body.castShadow = true;
+
+				var armGeometry = new THREE.BoxGeometry(16, 5, 5);
+				var armMaterial = new THREE.MeshPhongMaterial({
+					color: 0x674640,
+					shading: THREE.FlatShading
+				});
+				Arms = new THREE.Mesh(armGeometry, armMaterial);
+				Arms.position.y += 7;
+				Arms.castShadow = true;
+
+				var headGeometry = new THREE.BoxGeometry(4, 3, 3);
+				var headMaterial = new THREE.MeshPhongMaterial({
+					color: 0xDE5F47,
+					shading: THREE.FlatShading
+				});
+				head = new THREE.Mesh(headGeometry, headMaterial);
+				head.position.y += 15;
+				head.position.x += 0;
+				head.castShadow = true;
+
+
+				group = new THREE.Group();
+				group.add(Arms);
+				group.add(head);
+				group.add(body);
+				group.position.y += 8;
+				group.position.z += 45;
+				group.position.x += 35;
+				group.scale.set(2, 2, 2);
+				scene.add(group);
+			}
+
+			function makeFlock() {
+				for (var i = 0; i < numBoids; i++) {
+					theBoids[i] = new Boid();
+					theBoids[i].position.y += 200;
+					move(theBoids[i]);
+				}
+
+				function move(theBoids) {
+					var position = {
+						x: theBoids.position.x,
+						y: theBoids.position.y,
+						z: theBoids.position.z
+					}
+					var target = {
+						x: 100 * Math.random() - 60,
+						y: -250 * Math.random(),
+						z: 100 * Math.random()
+					}
+					var tween = new TWEEN.Tween(position).to(target, 8000);
+					tween.onUpdate(function() {
+						theBoids.position.x = position.x;
+						theBoids.position.y = position.y;
+						theBoids.position.z = position.z;
+					});
+
+					tween.easing(TWEEN.Easing.Sinusoidal.InOut);
+					
+					tween.delay(8000);
+					tween.start();
+				}
+
+			}
+
+		}
+
+		var trans = 0;
+
+		function render() {
+			requestAnimationFrame(render);
+			for (var i = 0; i < theBoids.length; i++) {
+				theBoids[i].run(theBoids);
+			}
+			controls.update();
+			TWEEN.update();
+			trans = inc();
+			camera.position.y += Math.sin(trans) * 1.4;
+			camera.position.x += Math.cos(trans) * 4;
+			camera.lookAt(grass.position);
+			// effect.render(scene, camera);
+			renderer.render(scene, camera);
+		}
+
+		function inc() {
+			trans = (trans + 0.01) % (Math.PI * 2);
+			return trans;
+		}
+
+		function onWindowResize() {
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize(window.innerWidth, window.innerHeight);
+		}
+
+		// used in Boid.js
+		function Box() {
+			var geometry = new THREE.IcosahedronGeometry(6, 0);
+			var material = new THREE.MeshPhongMaterial({
+				color: 0x6a6a6a,
+				shading: THREE.FlatShading
+			});
+			this.mesh = new THREE.Mesh(geometry, material);
+			this.mesh.castShadow = true;
+			//this.mesh.position.y -= 100;
+			//this.mesh.position.z -= 500;
+		}
+		// a simple limiting function on top of Vector3
+		THREE.Vector3.prototype.limit = function(max) {
+			if (this.length() > max) {
+				this.normalize();
+				this.multiplyScalar(max);
+			}
+		}
+
+	</script>
+</body>
+
+</html>
